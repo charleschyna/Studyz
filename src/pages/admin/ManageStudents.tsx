@@ -51,23 +51,37 @@ import { Loader2, MoreVertical, Plus, Search, Filter } from 'lucide-react';
 
 interface Student {
   id: string;
-  full_name: string;
-  date_of_birth: string;
   admission_number: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth: string;
   gender: string;
-  class: string;
-  stream: string;
-  year_of_admission: number;
-  parents: {
-    id: string;
-    full_name: string;
-    relationship: string;
-    phone_number: string;
-  }[];
+  class_id: string;
+  parent_email: string;
+  parent_phone: string;
+  status: string;
+  created_at: string;
+}
+
+interface NewStudent {
+  admission_number: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth: string;
+  gender: string;
+  class_id: string;
+  parent_email: string;
+  parent_phone: string;
+  address: string;
+  emergency_contact: string;
 }
 
 const ManageStudents: React.FC = () => {
   const { toast } = useToast();
+  // Filters
+  const [classFilter, setClassFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+
   const [isLoading, setIsLoading] = useState(true);
   const [students, setStudents] = useState<Student[]>([]);
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([]);
@@ -76,46 +90,40 @@ const ManageStudents: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [classes, setClasses] = useState<{ id: string; name: string; grade_level: number }[]>([]);
   
-  // Filters
-  const [classFilter, setClassFilter] = useState('all');
-  const [streamFilter, setStreamFilter] = useState('all');
-  const [yearFilter, setYearFilter] = useState('all');
-
-  const itemsPerPage = 10;
+  const [newStudent, setNewStudent] = useState<NewStudent>({
+    admission_number: '',
+    first_name: '',
+    last_name: '',
+    date_of_birth: '',
+    gender: '',
+    class_id: '',
+    parent_email: '',
+    parent_phone: '',
+    address: '',
+    emergency_contact: '',
+  });
 
   // Fetch students with pagination
   const fetchStudents = async () => {
     setIsLoading(true);
     try {
-      const start = (currentPage - 1) * itemsPerPage;
-      const end = start + itemsPerPage - 1;
+      const start = (currentPage - 1) * 10;
+      const end = start + 10 - 1;
 
       let query = supabase
         .from('students')
-        .select(`
-          *,
-          parents:parent_student_relationships(
-            parent:parents(
-              id,
-              full_name,
-              relationship,
-              phone_number
-            )
-          )
-        `)
+        .select('*', { count: 'exact' })
         .order('created_at', { ascending: false })
         .range(start, end);
 
       // Apply filters
       if (classFilter !== 'all') {
-        query = query.eq('class', classFilter);
+        query = query.eq('class_id', classFilter);
       }
-      if (streamFilter !== 'all') {
-        query = query.eq('stream', streamFilter);
-      }
-      if (yearFilter !== 'all') {
-        query = query.eq('year_of_admission', yearFilter);
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
       }
 
       const { data, error, count } = await query;
@@ -123,13 +131,8 @@ const ManageStudents: React.FC = () => {
       if (error) throw error;
 
       if (data) {
-        const formattedStudents = data.map(student => ({
-          ...student,
-          parents: student.parents.map((p: any) => p.parent)
-        }));
-        
-        setStudents(formattedStudents);
-        setTotalPages(Math.ceil((count || 0) / itemsPerPage));
+        setStudents(data);
+        setTotalPages(Math.ceil((count || 0) / 10));
       }
     } catch (error) {
       console.error('Error fetching students:', error);
@@ -146,13 +149,13 @@ const ManageStudents: React.FC = () => {
   // Initial fetch
   useEffect(() => {
     fetchStudents();
-  }, [currentPage, classFilter, streamFilter, yearFilter]);
+  }, [currentPage, classFilter, statusFilter]);
 
   // Search and filter
   useEffect(() => {
     if (searchQuery.trim()) {
       const filtered = students.filter(student =>
-        student.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        `${student.first_name} ${student.last_name}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
         student.admission_number.toLowerCase().includes(searchQuery.toLowerCase())
       );
       setFilteredStudents(filtered);
@@ -162,6 +165,137 @@ const ManageStudents: React.FC = () => {
   }, [searchQuery, students]);
 
   const displayedStudents = searchQuery ? filteredStudents : students;
+
+  // Fetch classes for the dropdown
+  const fetchClasses = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('classes')
+        .select('id, name, grade_level')
+        .order('grade_level', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching classes:', error);
+        throw error;
+      }
+      
+      if (data && data.length > 0) {
+        setClasses(data);
+        console.log('Classes loaded:', data.length);
+      } else {
+        console.log('No classes found in database');
+        // Create a default class if none exist
+        const { data: newClass, error: createError } = await supabase
+          .from('classes')
+          .insert([
+            {
+              name: 'Form 1',
+              grade_level: 1,
+              section: 'A',
+              academic_year: '2025',
+              status: 'active'
+            }
+          ])
+          .select()
+          .single();
+          
+        if (createError) {
+          console.error('Error creating default class:', createError);
+        } else if (newClass) {
+          setClasses([newClass]);
+          console.log('Created default class:', newClass);
+        }
+      }
+    } catch (error) {
+      console.error('Error in fetchClasses:', error);
+      toast({
+        variant: "destructive",
+        title: "Failed to load classes",
+        description: "Please try again later.",
+      });
+    }
+  };
+
+  useEffect(() => {
+    fetchClasses();
+    // Debug log
+    // Remove this after checking
+    // eslint-disable-next-line no-console
+    console.log('Classes:', classes);
+  }, []);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setNewStudent(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      // Format the date properly for PostgreSQL
+      const formattedDate = newStudent.date_of_birth ? new Date(newStudent.date_of_birth).toISOString().split('T')[0] : null;
+      
+      // Insert the new student
+      const { data, error } = await supabase
+        .from('students')
+        .insert([
+          {
+            admission_number: newStudent.admission_number,
+            first_name: newStudent.first_name,
+            last_name: newStudent.last_name,
+            date_of_birth: formattedDate,
+            gender: newStudent.gender,
+            class_id: newStudent.class_id,
+            parent_email: newStudent.parent_email,
+            parent_phone: newStudent.parent_phone,
+            address: newStudent.address || null,
+            emergency_contact: newStudent.emergency_contact || null,
+            status: 'active',
+            admission_date: new Date().toISOString().split('T')[0]
+          }
+        ])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      // Update the students list
+      if (data) {
+        setStudents(prev => [data, ...prev]);
+        setIsAddModalOpen(false);
+        setNewStudent({
+          admission_number: '',
+          first_name: '',
+          last_name: '',
+          date_of_birth: '',
+          gender: '',
+          class_id: '',
+          parent_email: '',
+          parent_phone: '',
+          address: '',
+          emergency_contact: '',
+        });
+        toast({
+          title: "Success",
+          description: "Student added successfully",
+        });
+      }
+    } catch (error: any) {
+      console.error('Error adding student:', error);
+      toast({
+        variant: "destructive",
+        title: "Failed to add student",
+        description: error.message || "Please try again later.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -199,49 +333,40 @@ const ManageStudents: React.FC = () => {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-[200px]">
               <div className="p-2 space-y-2">
-                <div className="space-y-1">
+                <div>
+                  <Label>Status</Label>
+                  <Select
+                    value={statusFilter}
+                    onValueChange={setStatusFilter}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="graduated">Graduated</SelectItem>
+                      <SelectItem value="suspended">Suspended</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
                   <Label>Class</Label>
-                  <Select value={classFilter} onValueChange={setClassFilter}>
+                  <Select
+                    value={classFilter}
+                    onValueChange={setClassFilter}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select class" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Classes</SelectItem>
-                      <SelectItem value="Form 1">Form 1</SelectItem>
-                      <SelectItem value="Form 2">Form 2</SelectItem>
-                      <SelectItem value="Form 3">Form 3</SelectItem>
-                      <SelectItem value="Form 4">Form 4</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="space-y-1">
-                  <Label>Stream</Label>
-                  <Select value={streamFilter} onValueChange={setStreamFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select stream" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Streams</SelectItem>
-                      <SelectItem value="A">Stream A</SelectItem>
-                      <SelectItem value="B">Stream B</SelectItem>
-                      <SelectItem value="C">Stream C</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label>Admission Year</Label>
-                  <Select value={yearFilter} onValueChange={setYearFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select year" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Years</SelectItem>
-                      <SelectItem value="2021">2021</SelectItem>
-                      <SelectItem value="2022">2022</SelectItem>
-                      <SelectItem value="2023">2023</SelectItem>
-                      <SelectItem value="2024">2024</SelectItem>
+                      {classes.map(cls => (
+                        <SelectItem key={cls.id} value={cls.id}>
+                          {cls.name} (Grade {cls.grade_level})
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -254,134 +379,251 @@ const ManageStudents: React.FC = () => {
       <Card>
         <CardHeader>
           <CardTitle>Students</CardTitle>
-          <CardDescription>
-            A list of all students in the school
-          </CardDescription>
+          <CardDescription>A list of all students in the school</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Admission No.</TableHead>
-                <TableHead>Class</TableHead>
-                <TableHead>Stream</TableHead>
-                <TableHead>Parents/Guardian</TableHead>
-                <TableHead>Contact</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                  </TableCell>
-                </TableRow>
-              ) : displayedStudents.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center">
-                    No students found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                displayedStudents.map((student) => (
-                  <TableRow key={student.id}>
-                    <TableCell className="font-medium">{student.full_name}</TableCell>
-                    <TableCell>{student.admission_number}</TableCell>
-                    <TableCell>{student.class}</TableCell>
-                    <TableCell>{student.stream}</TableCell>
-                    <TableCell>
-                      {student.parents.map(parent => (
-                        <div key={parent.id} className="text-sm">
-                          {parent.full_name} ({parent.relationship})
-                        </div>
-                      ))}
-                    </TableCell>
-                    <TableCell>
-                      {student.parents.map(parent => (
-                        <div key={parent.id} className="text-sm">
-                          {parent.phone_number}
-                        </div>
-                      ))}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>View Details</DropdownMenuItem>
-                          <DropdownMenuItem>Edit Student</DropdownMenuItem>
-                          <DropdownMenuItem className="text-red-600">
-                            Delete Student
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+          {isLoading ? (
+            <div className="flex justify-center items-center h-32">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : displayedStudents.length > 0 ? (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Admission No.</TableHead>
+                    <TableHead>Parent Contact</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                </TableHeader>
+                <TableBody>
+                  {displayedStudents.map((student) => (
+                    <TableRow key={student.id}>
+                      <TableCell className="font-medium">
+                        {student.first_name} {student.last_name}
+                      </TableCell>
+                      <TableCell>{student.admission_number}</TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <div>{student.parent_phone}</div>
+                          <div className="text-sm text-muted-foreground">{student.parent_email}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                          student.status === 'active' ? 'bg-green-100 text-green-800' :
+                          student.status === 'inactive' ? 'bg-gray-100 text-gray-800' :
+                          student.status === 'graduated' ? 'bg-blue-100 text-blue-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {student.status.charAt(0).toUpperCase() + student.status.slice(1)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem>View Details</DropdownMenuItem>
+                            <DropdownMenuItem>Edit Student</DropdownMenuItem>
+                            <DropdownMenuItem className="text-red-600">
+                              Delete Student
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
 
-          <div className="mt-4 flex justify-center">
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious 
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                  />
-                </PaginationItem>
-                <PaginationItem>
-                  Page {currentPage} of {totalPages}
-                </PaginationItem>
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages}
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
+              <div className="mt-4 flex justify-center">
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious 
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      />
+                    </PaginationItem>
+                    <PaginationItem>
+                      Page {currentPage} of {totalPages}
+                    </PaginationItem>
+                    <PaginationItem>
+                      <PaginationNext
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-10">
+              <p className="text-muted-foreground">No students found</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* Add Student Modal */}
       <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Add New Student</DialogTitle>
             <DialogDescription>
-              Enter the student's details below
+              Enter the student's details below. All fields marked with * are required.
             </DialogDescription>
           </DialogHeader>
           
-          {/* Add student form will go here */}
-          
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsAddModalOpen(false)}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button disabled={isSubmitting}>
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Adding...
-                </>
-              ) : (
-                'Add Student'
-              )}
-            </Button>
-          </DialogFooter>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="admission_number">Admission Number *</Label>
+                <Input
+                  id="admission_number"
+                  name="admission_number"
+                  value={newStudent.admission_number}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="first_name">First Name *</Label>
+                <Input
+                  id="first_name"
+                  name="first_name"
+                  value={newStudent.first_name}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="last_name">Last Name *</Label>
+                <Input
+                  id="last_name"
+                  name="last_name"
+                  value={newStudent.last_name}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="date_of_birth">Date of Birth *</Label>
+                <Input
+                  id="date_of_birth"
+                  name="date_of_birth"
+                  type="date"
+                  value={newStudent.date_of_birth}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="gender">Gender *</Label>
+                <Select name="gender" value={newStudent.gender} onValueChange={(value) => handleInputChange({ target: { name: 'gender', value } } as any)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="male">Male</SelectItem>
+                    <SelectItem value="female">Female</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="class_id">Class *</Label>
+                <Select name="class_id" value={newStudent.class_id} onValueChange={(value) => handleInputChange({ target: { name: 'class_id', value } } as any)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {classes.map(cls => (
+                      <SelectItem key={cls.id} value={cls.id}>
+                        {cls.name} (Grade {cls.grade_level})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="parent_email">Parent Email *</Label>
+                <Input
+                  id="parent_email"
+                  name="parent_email"
+                  type="email"
+                  value={newStudent.parent_email}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="parent_phone">Parent Phone *</Label>
+                <Input
+                  id="parent_phone"
+                  name="parent_phone"
+                  value={newStudent.parent_phone}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="address">Address</Label>
+                <Input
+                  id="address"
+                  name="address"
+                  value={newStudent.address}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="emergency_contact">Emergency Contact</Label>
+                <Input
+                  id="emergency_contact"
+                  name="emergency_contact"
+                  value={newStudent.emergency_contact}
+                  onChange={handleInputChange}
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAddModalOpen(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  'Add Student'
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

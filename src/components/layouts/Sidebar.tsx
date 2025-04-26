@@ -36,11 +36,22 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
-  const { userRole } = useAuth();
+  const { userRole, user } = useAuth();
 
   // Define routes based on user role
   const getRoutes = () => {
     const routes = [];
+    
+    // If user is not logged in, show login options
+    if (!user) {
+      routes.push(
+        { name: 'Home', path: '/', icon: <Home className="h-5 w-5" />, allowedRoles: ['guest'] },
+        { name: 'Admin Login', path: '/auth?role=admin', icon: <LogIn className="h-5 w-5" />, allowedRoles: ['guest'] },
+        { name: 'Teacher Login', path: '/auth?role=teacher', icon: <LogIn className="h-5 w-5" />, allowedRoles: ['guest'] },
+        { name: 'Parent Login', path: '/auth?role=parent', icon: <LogIn className="h-5 w-5" />, allowedRoles: ['guest'] }
+      );
+      return routes;
+    }
     
     if (userRole === 'admin') {
       routes.push(
@@ -82,7 +93,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
       );
     }
     
-    return routes.filter(route => route.allowedRoles.includes(userRole || ''));
+    return routes.filter(route => route.allowedRoles.includes(userRole || 'guest'));
   };
 
   return (
@@ -92,7 +103,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
     )}>
       <div className="flex items-center justify-between p-6 border-b border-blue-200">
         <div>
-          <h2 className="text-2xl font-bold text-blue-800">SPTS</h2>
+          <h2 className="text-2xl font-bold text-blue-800">STUDIZ</h2>
           <p className="text-sm text-blue-600">Student Performance Tracking</p>
         </div>
         <Button
@@ -126,6 +137,31 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
           ))}
         </ul>
       </nav>
+      
+      {!user && (
+        <div className="p-4 border-t border-blue-200">
+          <div className="bg-blue-50 rounded-lg p-3 text-sm text-blue-800">
+            <h3 className="font-semibold mb-1">Login Options</h3>
+            <p className="text-xs text-blue-600 mb-2">Select your role to access the appropriate portal</p>
+            <div className="space-y-2">
+              <NavLink 
+                to="/auth?role=teacher" 
+                className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors bg-blue-100 hover:bg-blue-200 text-blue-800"
+              >
+                <GraduationCap className="h-4 w-4" />
+                <span className="ml-2">Teacher Portal</span>
+              </NavLink>
+              <NavLink 
+                to="/auth?role=parent" 
+                className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors bg-blue-100 hover:bg-blue-200 text-blue-800"
+              >
+                <Users className="h-4 w-4" />
+                <span className="ml-2">Parent Portal</span>
+              </NavLink>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
